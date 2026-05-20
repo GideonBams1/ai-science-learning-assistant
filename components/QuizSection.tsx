@@ -1,21 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import type { QuizResponse, QuizQuestion } from "@/types";
 
 interface QuizSectionProps {
-  data:       QuizResponse;
-  onRetry:    () => void;
-  isRetrying: boolean;
+  data:        QuizResponse;
+  onRetry:     () => void;
+  isRetrying:  boolean;
+  onComplete?: (correct: number, total: number) => void;
 }
 
 const OPTION_LETTERS = ["A", "B", "C", "D"];
 
-function QuizCard({ question, index }: { question: QuizQuestion; index: number }) {
+// ── Single question card ──────────────────────────────────────────────────────
+function QuizCard({
+  question,
+  index,
+  onAnswer,
+}: {
+  question: QuizQuestion;
+  index:    number;
+  onAnswer: (isCorrect: boolean) => void;
+}) {
   const [selected, setSelected] = useState<number | null>(null);
   const answered  = selected !== null;
   const isCorrect = selected === question.answer;
+
+  const handleSelect = (i: number) => {
+    if (answered) return;
+    setSelected(i);
+    onAnswer(i === question.answer);
+  };
 
   return (
     <div className={cn(
@@ -44,7 +60,7 @@ function QuizCard({ question, index }: { question: QuizQuestion; index: number }
             <button
               key={i}
               type="button"
-              onClick={() => !answered && setSelected(i)}
+              onClick={() => handleSelect(i)}
               disabled={answered}
               className={cn(
                 "flex w-full items-start gap-3 rounded-lg border px-4 py-2.5 text-left text-sm transition-all duration-150",
@@ -84,7 +100,26 @@ function QuizCard({ question, index }: { question: QuizQuestion; index: number }
   );
 }
 
-export default function QuizSection({ data, onRetry, isRetrying }: QuizSectionProps) {
+// ── Quiz section ──────────────────────────────────────────────────────────────
+export default function QuizSection({ data, onRetry, isRetrying, onComplete }: QuizSectionProps) {
+  const total  = data.questions.length;
+  const [answers, setAnswers] = useState<boolean[]>([]);
+  const finished = answers.length === total;
+  const correct  = answers.filter(Boolean).length;
+  const score    = total > 0 ? Math.round((correct / total) * 100) : 0;
+
+  // Call onComplete once when quiz is finished
+  useEffect(() => {
+    if (finished && onComplete) {
+      onComplete(correct, total);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finished]);
+
+  const handleAnswer = (isCorrect: boolean) => {
+    setAnswers((prev) => [...prev, isCorrect]);
+  };
+
   return (
     <div className="space-y-5">
       {/* Header */}
@@ -93,7 +128,7 @@ export default function QuizSection({ data, onRetry, isRetrying }: QuizSectionPr
           <span>🧪</span> Knowledge Quiz
         </h2>
         <span className="rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-300">
-          {data.questions.length} questions
+          {total} questions
         </span>
       </div>
 
@@ -101,10 +136,42 @@ export default function QuizSection({ data, onRetry, isRetrying }: QuizSectionPr
 
       {/* Questions */}
       <div className="space-y-3">
-        {data.questions.map((q, i) => <QuizCard key={i} question={q} index={i} />)}
+        {data.questions.map((q, i) => (
+          <QuizCard
+            key={i}
+            question={q}
+            index={i}
+            onAnswer={handleAnswer}
+          />
+        ))}
       </div>
 
-      {/* Retry */}
+      {/* Score summary — shown when all questions answered */}
+      {finished && (
+        <div className={cn(
+          "rounded-xl border p-5 text-center transition-all animate-fade-in-up",
+          score >= 80 ? "border-emerald-500/30 bg-emerald-500/10" :
+          score >= 50 ? "border-amber-500/30 bg-amber-500/10" :
+                        "border-red-500/20 bg-red-500/10"
+        )}>
+          <div className="text-3xl mb-2">
+            {score >= 80 ? "🎉" : score >= 50 ? "💪" : "📚"}
+          </div>
+          <p className="text-lg font-bold text-white">
+            {correct}/{total} correct — {score}%
+          </p>
+          <p className={cn(
+            "mt-1 text-sm",
+            score >= 80 ? "text-emerald-300" : score >= 50 ? "text-amber-300" : "text-red-300"
+          )}>
+            {score >= 80 ? "Excellent work! Keep it up."
+              : score >= 50 ? "Good progress! Review the incorrect answers above."
+              : "Keep practising — revisit this topic to improve."}
+          </p>
+        </div>
+      )}
+
+      {/* Retry / New quiz */}
       <button
         type="button"
         onClick={onRetry}
