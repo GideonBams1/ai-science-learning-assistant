@@ -264,9 +264,7 @@ export default function HomePage() {
               Gideon Bams
             </span>
           </p>
-          <p className="text-xs text-slate-700">
-            Powered by Groq · Next.js 14 · Tailwind CSS
-          </p>
+         
         </footer>
       </div>
     </div>
