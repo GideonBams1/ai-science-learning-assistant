@@ -10,57 +10,70 @@ const openai = new OpenAI({
 });
 const MODEL = process.env.OPENAI_MODEL ?? "llama-3.1-8b-instant";
 
-// ── JSON extractor + sanitizer ────────────────────────────────────────────────
+// ── JSON extraction + sanitization ───────────────────────────────────────────
+
 function extractJSON(raw: string): string {
+  // Strip markdown code fences
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) return fence[1].trim();
+  // Pull out the outermost { … }
   const first = raw.indexOf("{"), last = raw.lastIndexOf("}");
   if (first !== -1 && last !== -1) return raw.slice(first, last + 1);
   return raw.trim();
 }
 
-/**
- * Walk the JSON character-by-character and escape any literal control
- * characters (newline, tab, carriage-return) that appear inside string
- * values.  This fixes "Bad escaped character" errors from LLM output that
- * embeds raw newlines in Mermaid code or markdown content.
- */
+/** Escape literal control chars inside JSON string values (LLM often emits raw newlines). */
 function sanitizeJSON(json: string): string {
-  let result  = "";
-  let inStr   = false;
-  let escaped = false;
-
+  let result = "", inStr = false, escaped = false;
   for (let i = 0; i < json.length; i++) {
     const ch = json[i];
-
-    if (escaped) { result += ch; escaped = false; continue; }
-    if (ch === "\\" && inStr) { escaped = true; result += ch; continue; }
-    if (ch === '"') { inStr = !inStr; result += ch; continue; }
-
+    if (escaped)             { result += ch; escaped = false; continue; }
+    if (ch === "\\" && inStr){ escaped = true; result += ch; continue; }
+    if (ch === '"')          { inStr = !inStr; result += ch; continue; }
     if (inStr) {
-      if (ch === "\n") { result += "\\n";  continue; }
-      if (ch === "\r") { result += "\\r";  continue; }
-      if (ch === "\t") { result += "\\t";  continue; }
-      // strip other raw control characters
-      if (ch.charCodeAt(0) < 0x20) continue;
+      if (ch === "\n") { result += "\\n"; continue; }
+      if (ch === "\r") { result += "\\r"; continue; }
+      if (ch === "\t") { result += "\\t"; continue; }
+      if (ch.charCodeAt(0) < 0x20) continue; // strip other control chars
     }
-
     result += ch;
   }
   return result;
 }
 
-function parseJSON(raw: string): unknown {
+type ParsedChat = {
+  content:       string;
+  topic:         string;
+  comprehension: number;
+  triggerQuiz:   boolean;
+  quizTopic?:    string | null;
+  diagram?:      DiagramAttachment | null;
+  illustration?: { prompt: string; alt: string } | null;
+};
+
+/** Try JSON.parse → sanitize → fallback to plain text response. Never throws. */
+function parseChat(raw: string): ParsedChat {
   const extracted = extractJSON(raw);
-  try {
-    return JSON.parse(extracted);
-  } catch {
-    // Second attempt: sanitize literal control chars inside strings
-    return JSON.parse(sanitizeJSON(extracted));
-  }
+
+  // Attempt 1: parse as-is
+  try { return JSON.parse(extracted) as ParsedChat; } catch { /* continue */ }
+
+  // Attempt 2: sanitize literal control chars then parse
+  try { return JSON.parse(sanitizeJSON(extracted)) as ParsedChat; } catch { /* continue */ }
+
+  // Attempt 3: the model returned plain text (not JSON at all) — wrap it safely
+  console.warn("[chat] model returned non-JSON, using raw text as content");
+  return {
+    content:       raw.trim() || "I had trouble formatting my response. Please try again.",
+    topic:         "Science",
+    comprehension: 50,
+    triggerQuiz:   false,
+    diagram:       null,
+    illustration:  null,
+  };
 }
 
-// ── system prompt ─────────────────────────────────────────────────────────────
+// ── System prompt ─────────────────────────────────────────────────────────────
 function buildSystemPrompt(
   difficulty: string,
   topicsStudied: string[],
@@ -74,34 +87,26 @@ function buildSystemPrompt(
   };
 
   const personalisation = topicsStudied.length > 0
-    ? `\n\nLEARNER CONTEXT:\n- Already studied: ${topicsStudied.slice(-10).join(", ")}\n- Needs work on: ${weakTopics.join(", ") || "none identified yet"}\n- Strong topics: ${strongTopics.join(", ") || "none yet"}\n\nUse this context to make connections to prior knowledge and fill identified gaps naturally in your explanations.`
+    ? `\n\nLEARNER CONTEXT:\n- Already studied: ${topicsStudied.slice(-10).join(", ")}\n- Needs work on: ${weakTopics.join(", ") || "none yet"}\n- Strong topics: ${strongTopics.join(", ") || "none yet"}\n\nConnect new explanations to prior knowledge and gently fill identified gaps.`
     : "";
 
-  return `You are an expert AI science tutor having a conversation with a student. Your role is to explain, engage, assess understanding, and adapt to the learner.
+  return `You are an expert AI science tutor. Respond ONLY with a single valid JSON object — absolutely no text before or after it, no markdown fences.
 
 DIFFICULTY: ${diffInstructions[difficulty] ?? diffInstructions.intermediate}${personalisation}
 
-RESPONSE FORMAT — You MUST respond with ONLY a raw JSON object (no markdown fences, no text outside JSON):
-{
-  "content": "<your conversational reply — use **bold** and bullet points freely for clarity>",
-  "topic": "<short 1-5 word topic name for this message>",
-  "comprehension": <0-100 integer — your estimate of how well the student understands so far based on what they said>,
-  "triggerQuiz": <true if the student has now covered enough content to benefit from a quick assessment, else false>,
-  "quizTopic": "<topic for quiz if triggerQuiz is true, else null>",
-  "diagram": <null OR { "type": "mermaid", "code": "<valid Mermaid diagram syntax>", "title": "<diagram title>" }>,
-  "illustration": <null OR { "prompt": "<vivid 10-15 word image prompt for a scientific illustration>", "alt": "<alt text>" }>
+EXACT JSON SCHEMA (copy structure exactly, replace placeholder values):
+{"content":"<explanation using **bold** and - bullet points>","topic":"<1-5 word topic>","comprehension":<0-100>,"triggerQuiz":<true|false>,"quizTopic":<"topic string" or null>,"diagram":<null or {"type":"mermaid","code":"<mermaid syntax — use \\n for line breaks inside the string>","title":"<title>"}>,"illustration":<null or {"prompt":"<10-15 word image description>","alt":"<alt text}"}>}
+
+CRITICAL RULES:
+1. Output ONLY the JSON object. Zero words outside it.
+2. In the "diagram.code" field, represent newlines as the two characters \\ and n — never a real line break.
+3. Set diagram to null and illustration to null when not needed.
+4. Set triggerQuiz true after 2-3 exchanges on the same topic, or when the student asks to be tested.
+5. Include a diagram for processes, cycles, hierarchies, or sequences.
+6. Include an illustration for anatomy, astronomy, lab equipment, molecular structures.`;
 }
 
-RULES FOR RICH CONTENT:
-- Include a diagram when explaining processes, relationships, hierarchies, or sequences (e.g. cell cycle, food web, atom structure, water cycle). Use flowchart TD or graph TD syntax.
-- Include an illustration prompt when the topic would benefit from a realistic visual (e.g. animal anatomy, celestial objects, lab equipment, molecular structures). Keep prompts clean: "<subject>, scientific illustration, detailed, educational".
-- Set triggerQuiz: true after the student has clearly engaged with a topic through 2-3 exchanges, or when they say they feel ready.
-- Vary your style: sometimes ask the student questions to check understanding before giving the answer.
-- Keep content conversational and encouraging. Celebrate progress. Use emojis sparingly.
-- If the student explicitly asks for a test, quiz, or assessment, always set triggerQuiz: true.`;
-}
-
-// ── route ─────────────────────────────────────────────────────────────────────
+// ── Route ─────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest): Promise<NextResponse<ChatApiResponse | ApiError>> {
   try {
     const { messages, difficulty, learnerData } = (await req.json()) as ChatApiRequest;
@@ -116,7 +121,6 @@ export async function POST(req: NextRequest): Promise<NextResponse<ChatApiRespon
       learnerData.strongTopics,
     );
 
-    // Build conversation for the API — keep last 12 turns to stay within context limits
     const conversationMessages = messages.slice(-12).map((m) => ({
       role:    m.role as "user" | "assistant",
       content: m.content,
@@ -124,23 +128,15 @@ export async function POST(req: NextRequest): Promise<NextResponse<ChatApiRespon
 
     const completion = await openai.chat.completions.create({
       model:       MODEL,
-      temperature: 0.7,
+      temperature: 0.6,   // slightly lower = more reliable JSON structure
       messages: [
         { role: "system", content: systemPrompt },
         ...conversationMessages,
       ],
     });
 
-    const raw  = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = parseJSON(raw) as {
-      content:       string;
-      topic:         string;
-      comprehension: number;
-      triggerQuiz:   boolean;
-      quizTopic?:    string | null;
-      diagram?:      DiagramAttachment | null;
-      illustration?: { prompt: string; alt: string } | null;
-    };
+    const raw    = completion.choices[0]?.message?.content ?? "{}";
+    const parsed = parseChat(raw);
 
     // Build Pollinations illustration URL if requested
     const illustration = parsed.illustration?.prompt
