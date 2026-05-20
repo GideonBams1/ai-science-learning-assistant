@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { scroll-behavior: smooth; }
+  body { @apply antialiased; }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-slate-900; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full bg-slate-600 hover:bg-slate-500; }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  .glow-blue {
+    box-shadow: 0 0 40px rgba(59, 130, 246, 0.35),
+                0 0 80px rgba(59, 130, 246, 0.15);
+  }
+  .glow-purple {
+    box-shadow: 0 0 40px rgba(139, 92, 246, 0.35),
+                0 0 80px rgba(139, 92, 246, 0.15);
+  }
+  .text-glow {
+    text-shadow: 0 0 40px rgba(147, 197, 253, 0.5);
+  }
+  .glass {
+    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+  }
+  .glass-light {
+    @apply bg-white/90 backdrop-blur-xl border border-white/60;
+  }
+}
+
+/* Animated starfield */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50%       { opacity: 1;   transform: scale(1.3); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-12px) rotate(2deg); }
+  66%       { transform: translateY(-6px) rotate(-1deg); }
+}
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(120px) rotate(0deg); }
+  to   { transform: rotate(360deg) translateX(120px) rotate(-360deg); }
+}
+@keyframes gradient-shift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes shimmer {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
+}
+@keyframes pulse-ring {
+  0%    { transform: scale(1);    opacity: 0.8; }
+  100%  { transform: scale(1.6);  opacity: 0; }
+}
+
+.animate-float       { animation: float 6s ease-in-out infinite; }
+.animate-float-delay { animation: float 6s ease-in-out 2s infinite; }
+.animate-orbit       { animation: orbit 12s linear infinite; }
+.animate-fade-in-up  { animation: fadeInUp 0.6s ease-out both; }
+.animate-gradient    {
+  background-size: 200% 200%;
+  animation: gradient-shift 6s ease infinite;
+}
+.animate-shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  animation: shimmer 2s ease-in-out infinite;
+}
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-400 { animation-delay: 0.4s; }
+.delay-500 { animation-delay: 0.5s; }
