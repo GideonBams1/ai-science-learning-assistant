@@ -10,13 +10,54 @@ const openai = new OpenAI({
 });
 const MODEL = process.env.OPENAI_MODEL ?? "llama-3.1-8b-instant";
 
-// ── JSON extractor ────────────────────────────────────────────────────────────
+// ── JSON extractor + sanitizer ────────────────────────────────────────────────
 function extractJSON(raw: string): string {
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) return fence[1].trim();
   const first = raw.indexOf("{"), last = raw.lastIndexOf("}");
   if (first !== -1 && last !== -1) return raw.slice(first, last + 1);
   return raw.trim();
+}
+
+/**
+ * Walk the JSON character-by-character and escape any literal control
+ * characters (newline, tab, carriage-return) that appear inside string
+ * values.  This fixes "Bad escaped character" errors from LLM output that
+ * embeds raw newlines in Mermaid code or markdown content.
+ */
+function sanitizeJSON(json: string): string {
+  let result  = "";
+  let inStr   = false;
+  let escaped = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+
+    if (escaped) { result += ch; escaped = false; continue; }
+    if (ch === "\\" && inStr) { escaped = true; result += ch; continue; }
+    if (ch === '"') { inStr = !inStr; result += ch; continue; }
+
+    if (inStr) {
+      if (ch === "\n") { result += "\\n";  continue; }
+      if (ch === "\r") { result += "\\r";  continue; }
+      if (ch === "\t") { result += "\\t";  continue; }
+      // strip other raw control characters
+      if (ch.charCodeAt(0) < 0x20) continue;
+    }
+
+    result += ch;
+  }
+  return result;
+}
+
+function parseJSON(raw: string): unknown {
+  const extracted = extractJSON(raw);
+  try {
+    return JSON.parse(extracted);
+  } catch {
+    // Second attempt: sanitize literal control chars inside strings
+    return JSON.parse(sanitizeJSON(extracted));
+  }
 }
 
 // ── system prompt ─────────────────────────────────────────────────────────────
@@ -91,7 +132,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<ChatApiRespon
     });
 
     const raw  = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = JSON.parse(extractJSON(raw)) as {
+    const parsed = parseJSON(raw) as {
       content:       string;
       topic:         string;
       comprehension: number;

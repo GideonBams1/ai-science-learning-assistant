@@ -40,6 +40,30 @@ function extractJSON(raw: string): string {
   return raw.trim();
 }
 
+function sanitizeJSON(json: string): string {
+  let result = "", inStr = false, escaped = false;
+  for (let i = 0; i < json.length; i++) {
+    const ch = json[i];
+    if (escaped) { result += ch; escaped = false; continue; }
+    if (ch === "\\" && inStr) { escaped = true; result += ch; continue; }
+    if (ch === '"') { inStr = !inStr; result += ch; continue; }
+    if (inStr) {
+      if (ch === "\n") { result += "\\n"; continue; }
+      if (ch === "\r") { result += "\\r"; continue; }
+      if (ch === "\t") { result += "\\t"; continue; }
+      if (ch.charCodeAt(0) < 0x20) continue;
+    }
+    result += ch;
+  }
+  return result;
+}
+
+function parseJSON(raw: string): unknown {
+  const extracted = extractJSON(raw);
+  try { return JSON.parse(extracted); }
+  catch { return JSON.parse(sanitizeJSON(extracted)); }
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse<QuizResponse | ApiError>> {
   try {
     const { topic, difficulty, count = 5 } = (await req.json()) as QuizRequest;
@@ -61,7 +85,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<QuizResponse 
     });
 
     const raw    = completion.choices[0]?.message?.content ?? '{"questions":[]}';
-    const parsed = JSON.parse(extractJSON(raw)) as QuizResponse;
+    const parsed = parseJSON(raw) as QuizResponse;
     return NextResponse.json(parsed);
   } catch (err: unknown) {
     console.error("[quiz] error:", err);
