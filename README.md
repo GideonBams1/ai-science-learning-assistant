@@ -1,211 +1,161 @@
 # 🔭 AI Science Learning Assistant
 
-An intelligent, conversational AI science tutor built with **Next.js 14**, **Tailwind CSS**, and the **Groq API (LLaMA 3.1)**. Ask any science question, get rich multi-turn explanations with concept diagrams and AI illustrations, then test yourself with adaptive quizzes — all tracked in a personal learning dashboard.
+> A conversational AI tutor that adapts to your level, visualises concepts, and tracks your progress over time — built on a fully free AI stack.
+
+**[Live Demo](https://your-demo-link.vercel.app)** · **[Screenshots](#screenshots)**
 
 ---
 
-## 📖 Overview
+## Overview
 
-### What it does
-The AI Science Learning Assistant turns any science question into a full learning experience. You chat naturally with an AI tutor, receive structured explanations, see auto-generated concept diagrams, and get quizzed on what you've learned — all in one seamless interface.
+Most AI tools answer questions and stop there. This project goes further: it holds multi-turn science conversations, generates concept diagrams and illustrations on-the-fly, auto-triggers quizzes when you've studied a topic long enough, and maintains a personal learning profile that shapes every subsequent response.
 
-### The problem it solves
-Most AI tools answer questions and stop there. This assistant goes further: it remembers what you've studied, identifies where your understanding is weak, adapts its explanations to your chosen difficulty level, and actively reinforces learning through quizzes and progress tracking — bridging the gap between "asking a chatbot" and "actually learning."
+**The problem it solves:** Learners need more than answers — they need reinforcement, gap identification, and pacing. This assistant handles all three without a backend, a database, or any paid APIs.
 
-### Why it was built
-To demonstrate how modern AI tools can create genuinely personalised, interactive learning experiences — not just Q&A lookups — using entirely free, open-source APIs and a clean, deployable Next.js architecture.
+**Why it was built:** To explore what a genuinely adaptive AI learning experience looks like when you strip away everything unnecessary — no auth, no server, no cost.
 
 ---
 
-## ✨ Features
+## Features
 
-- **Multi-turn conversational chat** — Context-aware conversation that remembers everything you've discussed in the session
-- **AI-generated science explanations** — Rich markdown responses with bold text, bullets, and headings tailored to your level
-- **Beginner / Intermediate / Advanced difficulty modes** — Explanations range from "curious 10-year-old" analogies to university-level detail with equations
-- **AI concept diagrams** — Automatic Mermaid flowcharts for processes, cycles, hierarchies, and sequences (e.g. photosynthesis, Newton's laws)
-- **AI illustrations** — Generated images for anatomy, astronomy, molecules, and lab equipment via Pollinations AI
-- **Quiz generation** — 5-question multiple-choice quizzes auto-generated on the topic you've been studying
-- **Adaptive quiz triggering** — Quizzes fire automatically after 2-3 exchanges on a topic, or on demand with a single click
-- **Learning progress tracking** — Every topic studied, quiz taken, and score recorded — persisted locally between sessions
-- **Learning dashboard** — Visual overview of topics studied, quiz accuracy, learning streaks, weak spots, and personalised recommendations
-- **Personalised system prompt** — The AI tutor adapts based on your history: reinforcing weak topics and building on strong ones
-- **Responsive modern UI** — Sidebar layout on desktop, tab navigation on mobile; glassmorphism space theme throughout
-- **Real-time AI responses** — Typing indicators, lazy-loaded diagrams, progressive image loading
-- **Robust error handling** — Multi-attempt JSON parsing with plain-text fallback; graceful failure for diagrams and images
+**AI Tutoring**
+- Context-aware explanations tailored to Beginner / Intermediate / Advanced proficiency, adjusting vocabulary, analogies, and depth accordingly
+- Multi-turn conversation with full session memory — the tutor builds on what you've already discussed
 
----
+**Adaptive Learning**
+- Personalised system prompts that weight explanations toward your weak topics and reinforce gaps identified from quiz history
+- Learning profiler that tracks topics studied, comprehension estimates, quiz scores, and study streaks — persisted between sessions via localStorage
 
-## 🛠 Tech Stack
+**Visualisation**
+- Auto-generated Mermaid concept diagrams for processes, cycles, and hierarchies — fetched asynchronously to keep chat responses fast and JSON-safe
+- AI illustrations for anatomy, astronomy, molecules, and lab concepts via Pollinations AI
 
-| Technology | Purpose |
-|---|---|
-| Next.js 14 (App Router) | Framework, API routes, SSR/SSG |
-| React 18 | UI, hooks, client state |
-| TypeScript 5 | Full type safety across all layers |
-| Tailwind CSS 3 | Utility-first styling, dark glassmorphism theme |
-| Groq API (LLaMA 3.1 8B) | Free, fast LLM for chat, diagrams, and quizzes |
-| OpenAI SDK v4 | API client (pointed at Groq's OpenAI-compatible endpoint) |
-| Mermaid.js 11 | Client-side concept diagram rendering |
-| Pollinations AI | Free AI image generation via URL |
-| localStorage | Learning progress persistence (no backend DB needed) |
+**Quiz System**
+- Adaptive quiz generation with instant per-question feedback, answer locking, and score summaries
+- Smart trigger logic: quizzes fire automatically after 2–3 exchanges on a topic, or on demand from any message
+
+**Analytics Dashboard**
+- Visual learning dashboard showing accuracy trends, strong/weak topic breakdown, study streak, and personalised revision recommendations
 
 ---
 
-## 🚀 Getting Started
+## Tech Stack
+
+| Layer | Technology | Why |
+|---|---|---|
+| Framework | Next.js 14 (App Router) | File-based routing, API routes, SSR |
+| Language | TypeScript 5 | End-to-end type safety |
+| Styling | Tailwind CSS 3 | Utility-first, dark glassmorphism theme |
+| LLM | Groq API — LLaMA 3.1 8B Instant | Free tier, ~300 token/s, OpenAI-compatible |
+| AI Client | OpenAI SDK v4 | Pointed at Groq's base URL — zero lock-in |
+| Diagrams | Mermaid.js 11 | Client-side SVG, dynamic import (no SSR) |
+| Images | Pollinations AI | Free generative image API via URL |
+| Persistence | localStorage | Zero-backend session memory |
+
+---
+
+## Architecture
+
+```
+POST /api/chat       → Returns flat JSON (text, topic, flags) — no diagram code
+POST /api/diagram    → Returns raw Mermaid syntax as text/plain
+POST /api/quiz       → Returns structured question array
+POST /api/explain    → Single-shot explanation (legacy)
+```
+
+**Key design decision:** Diagram generation is intentionally separated from the chat route. Embedding multi-line Mermaid syntax inside a JSON string produced persistent control-character errors with smaller LLMs. Moving it to a plain-text endpoint eliminated the problem entirely and made diagram fetching non-blocking.
+
+```
+app/
+├── api/chat/         # Conversational AI with learner-aware system prompt
+├── api/diagram/      # Plain-text Mermaid generation
+├── api/quiz/         # Structured quiz generation
+components/
+├── ChatInterface     # Full chat UI, message list, input bar
+├── ChatMessage       # Bubble + DiagramLoader + illustration + quiz trigger
+├── MermaidDiagram    # Client-only Mermaid SVG renderer
+├── QuizSection       # Interactive quiz with score tracking
+├── LearnerDashboard  # Progress stats, gaps, recommendations
+lib/
+└── learningStore     # localStorage read/write, topic tracking, gap analysis
+```
+
+---
+
+## Getting Started
 
 ### Prerequisites
+- Node.js 18+
+- A free [Groq API key](https://console.groq.com) (no credit card required)
 
-- **Node.js 18+** ([download](https://nodejs.org))
-- **npm** (included with Node)
-- A **Groq API key** — free at [console.groq.com](https://console.groq.com) (no credit card required)
-
-### 1. Clone or open the project
+### Setup
 
 ```bash
-cd "AI Science Learning Assistant"
-```
-
-### 2. Install dependencies
-
-```bash
+# 1. Install dependencies
 npm install
+
+# 2. Create environment file
+cp .env.local.example .env.local
 ```
 
-### 3. Set up environment variables
-
-Create a `.env.local` file in the project root:
+Edit `.env.local`:
 
 ```env
-OPENAI_API_KEY=your-groq-api-key-here
+OPENAI_API_KEY=your-groq-api-key
 OPENAI_BASE_URL=https://api.groq.com/openai/v1
 OPENAI_MODEL=llama-3.1-8b-instant
 ```
 
-> **Security:** `.env.local` is excluded from git. Never commit your API key.
-
-### 4. Run the development server
-
 ```bash
+# 3. Start development server
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
 
-### 5. Build for production
+### Deploy to Vercel
 
-```bash
-npm run build
-npm run start
-```
+Push to GitHub, import the repo in [Vercel](https://vercel.com), and add the three environment variables above in Project Settings. No other configuration needed.
 
 ---
 
-## ⚙️ Environment Variables
+## Key Technical Challenges
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `OPENAI_API_KEY` | ✅ Yes | — | Your Groq API key (or any OpenAI-compatible key) |
-| `OPENAI_BASE_URL` | ❌ No | OpenAI default | Set to `https://api.groq.com/openai/v1` for Groq |
-| `OPENAI_MODEL` | ❌ No | `llama-3.1-8b-instant` | Any supported chat model |
+**Reliable JSON from small LLMs** — LLaMA 3.1 8B frequently returned malformed JSON containing raw control characters, misplaced code fences, or non-JSON preamble. Solved with a four-attempt parser: direct parse → regex control-character strip → nuclear sanitisation → plain-text fallback. Moved Mermaid generation out of the JSON response entirely to eliminate the hardest class of error.
 
-### Recommended models
+**Mermaid in a Next.js App Router project** — Mermaid imports `window` on load and breaks SSR. Resolved with `next/dynamic({ ssr: false })` at two levels: the page importing `ChatInterface`, and `ChatMessage` importing `MermaidDiagram`. Diagram fetching is asynchronous and non-blocking.
 
-| Model | Provider | Cost | Notes |
-|---|---|---|---|
-| `llama-3.1-8b-instant` | Groq | 💚 Free | Default — fast and free |
-| `llama-3.3-70b-versatile` | Groq | 💚 Free | Higher quality, still free |
-| `gpt-4o-mini` | OpenAI | 🟡 Paid | Use with OpenAI key, no `BASE_URL` needed |
+**Adaptive prompting without a backend** — The system prompt rebuilds on every request from a compact learner summary (topics studied, weak topics, strong topics) stored in localStorage. This gives the model personalised context within a stateless serverless architecture.
+
+**localStorage hydration without SSR mismatch** — Initialised learner state as `null` and populated it inside `useEffect`, preventing React hydration errors caused by server/client state divergence.
+
+**Conversational memory in a stateless API** — The last 12 messages are included with every chat request, giving the model sufficient context without exceeding token limits on the free Groq tier.
 
 ---
 
-## 🔍 API Routes
+## Future Improvements
 
-### `POST /api/chat`
-Main conversational endpoint.
-- **Body:** `{ messages, difficulty, learnerData }`
-- **Returns:** `{ content, topic, comprehension, triggerQuiz, quizTopic, wantsDiagram, diagramTitle, illustration }`
-- Builds a personalised system prompt from the learner's history
-- Returns a flat JSON structure — **no Mermaid code embedded** (fetched separately to avoid JSON escaping errors)
-
-### `POST /api/diagram`
-Generates a Mermaid concept diagram for a topic.
-- **Body:** `{ topic }`
-- **Returns:** Raw Mermaid syntax as `text/plain`
-- Returns plain text (not JSON) to guarantee reliable multi-line content
-
-### `POST /api/quiz`
-Generates a multiple-choice quiz.
-- **Body:** `{ topic, difficulty, count }`
-- **Returns:** `{ questions: [{ question, options[], answer, explanation }] }`
-
-### `POST /api/explain`
-Single-shot explanation (legacy endpoint).
-- **Body:** `{ question, difficulty }`
-- **Returns:** `{ explanation, keyPoints[], topic }`
+- **Voice tutoring** — Speech-to-text input and text-to-speech responses for hands-free learning
+- **RAG over science textbooks** — Vector search against open-access textbooks (OpenStax, LibreTexts) for citation-grounded answers
+- **Teacher dashboard** — Assign topics, track student progress, and flag learning gaps across a class
+- **Spaced repetition** — Schedule quiz repeats based on forgetting curves derived from score history
+- **Student accounts** — Sync learning profiles across devices via a lightweight backend (PlanetScale + NextAuth)
+- **Multi-modal input** — Accept photos of diagrams, equations, or lab setups as question context
 
 ---
 
-## 📁 Project Structure
+## What I Learned
 
-```
-ai-science-learning-assistant/
-├── app/
-│   ├── layout.tsx                # Root layout, fonts, metadata
-│   ├── page.tsx                  # Sidebar layout, Chat/Dashboard tabs, localStorage hydration
-│   ├── globals.css               # Tailwind base + custom scrollbar
-│   └── api/
-│       ├── chat/route.ts         # POST /api/chat — conversational AI tutor
-│       ├── diagram/route.ts      # POST /api/diagram — Mermaid plain-text generation
-│       ├── quiz/route.ts         # POST /api/quiz — quiz generation
-│       └── explain/route.ts      # POST /api/explain — single explanation
-├── components/
-│   ├── ChatInterface.tsx         # Full chat UI, message list, input bar
-│   ├── ChatMessage.tsx           # Message bubble + DiagramLoader + illustration + quiz trigger
-│   ├── MermaidDiagram.tsx        # Client-only Mermaid SVG renderer
-│   ├── QuizSection.tsx           # Interactive quiz cards with score tracking
-│   └── LearnerDashboard.tsx      # Progress stats, gaps, recommendations
-├── lib/
-│   └── learningStore.ts          # localStorage read/write, topic tracking, gap analysis
-├── types/
-│   └── index.ts                  # All shared TypeScript types
-├── .env.local                    # Your secrets (never committed)
-├── next.config.mjs               # Pollinations image domain + Mermaid webpack external
-├── tailwind.config.ts
-├── tsconfig.json
-└── package.json
-```
+Building this project deepened my understanding of:
+
+- **Prompt engineering at the edge** — Designing prompts that remain reliable across different model sizes and temperatures, including graceful degradation strategies when the model doesn't cooperate
+- **Conversational AI architecture** — The difference between stateless Q&A and stateful tutoring, and how to approximate the latter within serverless constraints
+- **AI response reliability** — Why JSON-in-LLM-output is genuinely hard, and architectural patterns (plain text, separate endpoints, multi-attempt parsing) that make production AI features robust
+- **Adaptive learning systems** — How comprehension signals, topic weighting, and quiz feedback loops combine to meaningfully personalise an experience without ML infrastructure
+- **AI-assisted development workflows** — Using AI tooling to accelerate architecture decisions, iterate on component design, and debug unfamiliar failure modes faster
 
 ---
 
-## 🚢 Deployment
+## License
 
-### Deploy to Vercel (recommended)
-
-1. Push your code to GitHub
-2. Go to [vercel.com](https://vercel.com) → **New Project** → import your repo
-3. Add environment variables in **Project Settings → Environment Variables**:
-   - `OPENAI_API_KEY`
-   - `OPENAI_BASE_URL`
-   - `OPENAI_MODEL`
-4. Deploy — Vercel handles the build automatically
-
-> If Vercel shows an old version after a push, go to **Deployments → ⋯ → Redeploy** to force a fresh build.
-
----
-
-## 🐛 Troubleshooting
-
-| Problem | Solution |
-|---|---|
-| `API key missing` error | Check `.env.local` exists with a valid `OPENAI_API_KEY` |
-| Diagrams not appearing | Confirm `OPENAI_BASE_URL` and `OPENAI_MODEL` are set; the diagram API uses the same model |
-| `JSON parse error` in chat | Built-in 4-attempt parser handles this — if it persists, the model returned garbage; retry |
-| Images not loading | Pollinations AI is a free service with occasional downtime; images fail silently |
-| Mermaid errors in console | Some diagram syntax from the model may be invalid; the component silently hides failures |
-| Vercel not updating | Trigger a manual redeploy from the Vercel dashboard |
-
----
-
-## 📄 License
-
-MIT — use freely, learn deeply! 🚀
+MIT — use freely, learn deeply. 🚀
