@@ -2,6 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 
+// Mermaid is a singleton — initialise exactly once per page load.
+// Re-calling initialize() on every render corrupts its internal state.
+let mermaidReady = false;
+
 interface Props {
   code:  string;
   title: string;
@@ -20,23 +24,26 @@ export default function MermaidDiagram({ code, title }: Props) {
         // Dynamic import so Mermaid's browser-only code never runs on the server
         const mermaid = (await import("mermaid")).default;
 
-        mermaid.initialize({
-          startOnLoad: false,
-          theme:       "dark",
-          themeVariables: {
-            background:       "#0d1117",
-            primaryColor:     "#3b82f6",
-            primaryTextColor: "#e2e8f0",
-            primaryBorderColor: "#1e40af",
-            lineColor:        "#6b7280",
-            secondaryColor:   "#1e293b",
-            tertiaryColor:    "#1e293b",
-            edgeLabelBackground: "#1e293b",
-            fontFamily:       "Inter, sans-serif",
-          },
-          flowchart:   { curve: "basis", useMaxWidth: true },
-          securityLevel: "loose",
-        });
+        if (!mermaidReady) {
+          mermaid.initialize({
+            startOnLoad: false,
+            theme:       "dark",
+            themeVariables: {
+              background:          "#0d1117",
+              primaryColor:        "#3b82f6",
+              primaryTextColor:    "#e2e8f0",
+              primaryBorderColor:  "#1e40af",
+              lineColor:           "#6b7280",
+              secondaryColor:      "#1e293b",
+              tertiaryColor:       "#1e293b",
+              edgeLabelBackground: "#1e293b",
+              fontFamily:          "Inter, sans-serif",
+            },
+            flowchart:     { curve: "basis", useMaxWidth: true },
+            securityLevel: "loose",
+          });
+          mermaidReady = true;
+        }
 
         const id  = `mermaid-${Math.random().toString(36).slice(2)}`;
         const { svg } = await mermaid.render(id, code);

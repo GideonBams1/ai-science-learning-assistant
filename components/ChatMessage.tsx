@@ -56,11 +56,12 @@ function DiagramLoader({ topic, title }: { topic: string; title: string }) {
       body:    JSON.stringify({ topic }),
     })
       .then((r) => {
+        if (r.status === 204) return ""; // model gave nothing usable — skip silently
         if (!r.ok) throw new Error("bad response");
         return r.text();
       })
       .then((text) => {
-        if (!cancelled) { setCode(text.trim()); setLoading(false); }
+        if (!cancelled) { setCode(text.trim() || null); setLoading(false); }
       })
       .catch(() => {
         if (!cancelled) { setFailed(true); setLoading(false); }
