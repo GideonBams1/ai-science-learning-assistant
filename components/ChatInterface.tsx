@@ -98,14 +98,15 @@ export default function ChatInterface({ difficulty, learnerData, onLearnerUpdate
 
       // Build assistant message
       const assistantMsg: ChatMessage = {
-        id:           uid(),
-        role:         "assistant",
-        content:      chat.content,
-        timestamp:    Date.now(),
-        topic:        chat.topic,
+        id:            uid(),
+        role:          "assistant",
+        content:       chat.content,
+        timestamp:     Date.now(),
+        topic:         chat.topic,
         comprehension: chat.comprehension,
-        diagram:      chat.diagram,
-        illustration: chat.illustration,
+        diagramTopic:  chat.diagramTopic,
+        diagramTitle:  chat.diagramTitle,
+        illustration:  chat.illustration,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);

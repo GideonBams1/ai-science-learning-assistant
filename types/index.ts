@@ -58,7 +58,8 @@ export interface ChatMessage {
   timestamp: number;                    // Date.now()
 
   // Optional rich content attached to assistant messages
-  diagram?:       DiagramAttachment;
+  diagramTopic?:  string;               // if set, diagram is fetched lazily from /api/diagram
+  diagramTitle?:  string;
   illustration?:  IllustrationAttachment;
   quiz?:          QuizResponse;
   topic?:         string;               // detected topic of this message
@@ -87,11 +88,13 @@ export interface ChatApiRequest {
 export interface ChatApiResponse {
   content:       string;
   topic:         string;
-  diagram?:      DiagramAttachment;
-  illustration?: IllustrationAttachment;
+  comprehension: number;             // 0-100 confidence of learner understanding this turn
   triggerQuiz:   boolean;
   quizTopic?:    string;
-  comprehension: number;             // 0-100 confidence of learner understanding this turn
+  // Diagram is fetched separately via /api/diagram to avoid JSON escaping issues
+  diagramTopic?: string;             // if set, front-end fetches diagram for this topic
+  diagramTitle?: string;
+  illustration?: IllustrationAttachment;
 }
 
 // ── Learning Tracking ─────────────────────────────────────────────────────────

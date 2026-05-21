@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
-import type { ChatApiRequest, ChatApiResponse, ApiError, DiagramAttachment } from "@/types";
+import type { ChatApiRequest, ChatApiResponse, ApiError } from "@/types";
 
 export const runtime = "nodejs";
 
@@ -10,104 +10,109 @@ const openai = new OpenAI({
 });
 const MODEL = process.env.OPENAI_MODEL ?? "llama-3.1-8b-instant";
 
-// ── JSON extraction + sanitization ───────────────────────────────────────────
+// ── JSON helpers ──────────────────────────────────────────────────────────────
 
 function extractJSON(raw: string): string {
-  // Strip markdown code fences
   const fence = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
   if (fence) return fence[1].trim();
-  // Pull out the outermost { … }
   const first = raw.indexOf("{"), last = raw.lastIndexOf("}");
   if (first !== -1 && last !== -1) return raw.slice(first, last + 1);
   return raw.trim();
 }
 
-/** Escape literal control chars inside JSON string values (LLM often emits raw newlines). */
-function sanitizeJSON(json: string): string {
-  let result = "", inStr = false, escaped = false;
-  for (let i = 0; i < json.length; i++) {
-    const ch = json[i];
-    if (escaped)             { result += ch; escaped = false; continue; }
-    if (ch === "\\" && inStr){ escaped = true; result += ch; continue; }
-    if (ch === '"')          { inStr = !inStr; result += ch; continue; }
-    if (inStr) {
-      if (ch === "\n") { result += "\\n"; continue; }
-      if (ch === "\r") { result += "\\r"; continue; }
-      if (ch === "\t") { result += "\\t"; continue; }
-      if (ch.charCodeAt(0) < 0x20) continue; // strip other control chars
-    }
-    result += ch;
-  }
-  return result;
-}
-
-type ParsedChat = {
-  content:       string;
-  topic:         string;
-  comprehension: number;
-  triggerQuiz:   boolean;
-  quizTopic?:    string | null;
-  diagram?:      DiagramAttachment | null;
-  illustration?: { prompt: string; alt: string } | null;
+// The chat response is intentionally simple — NO mermaid code embedded in JSON.
+// Mermaid is fetched separately via /api/diagram to avoid JSON control-char errors.
+type SimpleResponse = {
+  content:        string;
+  topic:          string;
+  comprehension:  number;
+  triggerQuiz:    boolean;
+  quizTopic:      string | null;
+  wantsDiagram:   boolean;
+  diagramTitle:   string | null;
+  illustrationPrompt: string | null;
+  illustrationAlt:    string | null;
 };
 
-/** Try JSON.parse → sanitize → fallback to plain text response. Never throws. */
-function parseChat(raw: string): ParsedChat {
+function safeParse(raw: string): SimpleResponse {
   const extracted = extractJSON(raw);
 
-  // Attempt 1: parse as-is
-  try { return JSON.parse(extracted) as ParsedChat; } catch { /* continue */ }
+  // Attempt 1 — direct
+  try { return JSON.parse(extracted) as SimpleResponse; } catch { /* next */ }
 
-  // Attempt 2: sanitize literal control chars then parse
-  try { return JSON.parse(sanitizeJSON(extracted)) as ParsedChat; } catch { /* continue */ }
+  // Attempt 2 — strip every literal control character then parse
+  try {
+    const cleaned = extracted.replace(/[\x00-\x1F]/g, (ch) => {
+      if (ch === "\n") return "\\n";
+      if (ch === "\r") return "\\r";
+      if (ch === "\t") return "\\t";
+      return ""; // drop other control chars
+    });
+    return JSON.parse(cleaned) as SimpleResponse;
+  } catch { /* next */ }
 
-  // Attempt 3: the model returned plain text (not JSON at all) — wrap it safely
-  console.warn("[chat] model returned non-JSON, using raw text as content");
+  // Attempt 3 — nuclear strip, ignore formatting
+  try {
+    const nuclear = extracted
+      .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "")
+      .replace(/\n/g, "\\n")
+      .replace(/\r/g, "\\r")
+      .replace(/\t/g, "\\t");
+    return JSON.parse(nuclear) as SimpleResponse;
+  } catch { /* next */ }
+
+  // Attempt 4 — fallback: treat the whole raw output as the reply
+  console.warn("[chat] all JSON attempts failed, wrapping raw text");
   return {
-    content:       raw.trim() || "I had trouble formatting my response. Please try again.",
-    topic:         "Science",
-    comprehension: 50,
-    triggerQuiz:   false,
-    diagram:       null,
-    illustration:  null,
+    content:            raw.trim() || "Sorry, I had trouble formatting my reply. Please try again.",
+    topic:              "Science",
+    comprehension:      50,
+    triggerQuiz:        false,
+    quizTopic:          null,
+    wantsDiagram:       false,
+    diagramTitle:       null,
+    illustrationPrompt: null,
+    illustrationAlt:    null,
   };
 }
 
 // ── System prompt ─────────────────────────────────────────────────────────────
+
 function buildSystemPrompt(
   difficulty: string,
   topicsStudied: string[],
   weakTopics: string[],
   strongTopics: string[],
 ): string {
-  const diffInstructions: Record<string, string> = {
-    beginner:     "Use simple everyday language, relatable analogies, avoid jargon. Write as if talking to a curious 10-year-old.",
-    intermediate: "Use clear explanations with key terminology defined inline. Suitable for high school students.",
-    advanced:     "Go deep: include equations, mechanisms, edge cases, and nuance. University/research level.",
+  const diffMap: Record<string, string> = {
+    beginner:     "Simple language and everyday analogies, no jargon. Like explaining to a curious 10-year-old.",
+    intermediate: "Clear explanations with key terms defined. High school level.",
+    advanced:     "University/research level: equations, mechanisms, edge cases.",
   };
 
-  const personalisation = topicsStudied.length > 0
-    ? `\n\nLEARNER CONTEXT:\n- Already studied: ${topicsStudied.slice(-10).join(", ")}\n- Needs work on: ${weakTopics.join(", ") || "none yet"}\n- Strong topics: ${strongTopics.join(", ") || "none yet"}\n\nConnect new explanations to prior knowledge and gently fill identified gaps.`
+  const ctx = topicsStudied.length > 0
+    ? ` Learner has studied: ${topicsStudied.slice(-8).join(", ")}. Weak: ${weakTopics.join(", ") || "none"}. Strong: ${strongTopics.join(", ") || "none"}.`
     : "";
 
-  return `You are an expert AI science tutor. Respond ONLY with a single valid JSON object — absolutely no text before or after it, no markdown fences.
+  return `You are an expert AI science tutor.${ctx}
 
-DIFFICULTY: ${diffInstructions[difficulty] ?? diffInstructions.intermediate}${personalisation}
+Difficulty: ${diffMap[difficulty] ?? diffMap.intermediate}
 
-EXACT JSON SCHEMA (copy structure exactly, replace placeholder values):
-{"content":"<explanation using **bold** and - bullet points>","topic":"<1-5 word topic>","comprehension":<0-100>,"triggerQuiz":<true|false>,"quizTopic":<"topic string" or null>,"diagram":<null or {"type":"mermaid","code":"<mermaid syntax — use \\n for line breaks inside the string>","title":"<title>"}>,"illustration":<null or {"prompt":"<10-15 word image description>","alt":"<alt text}"}>}
+Reply with ONLY this JSON object — no text before or after, no code fences:
+{"content":"<reply with **bold** and - bullets>","topic":"<1-5 word topic>","comprehension":<0-100>,"triggerQuiz":<true or false>,"quizTopic":<"topic" or null>,"wantsDiagram":<true or false>,"diagramTitle":<"short title" or null>,"illustrationPrompt":<"10-word image description" or null>,"illustrationAlt":<"alt text" or null>}
 
-CRITICAL RULES:
-1. Output ONLY the JSON object. Zero words outside it.
-2. In the "diagram.code" field, represent newlines as the two characters \\ and n — never a real line break.
-3. Set diagram to null and illustration to null when not needed.
-4. Set triggerQuiz true after 2-3 exchanges on the same topic, or when the student asks to be tested.
-5. Include a diagram for processes, cycles, hierarchies, or sequences.
-6. Include an illustration for anatomy, astronomy, lab equipment, molecular structures.`;
+Rules:
+- Set wantsDiagram true for processes, cycles, hierarchies, or sequences (do NOT include the diagram code here)
+- Set illustrationPrompt for anatomy, astronomy, molecules, lab equipment
+- Set triggerQuiz true after 2-3 exchanges on one topic or if student asks to be tested
+- Be encouraging and conversational`;
 }
 
 // ── Route ─────────────────────────────────────────────────────────────────────
-export async function POST(req: NextRequest): Promise<NextResponse<ChatApiResponse | ApiError>> {
+
+export async function POST(
+  req: NextRequest,
+): Promise<NextResponse<ChatApiResponse | ApiError>> {
   try {
     const { messages, difficulty, learnerData } = (await req.json()) as ChatApiRequest;
 
@@ -121,39 +126,37 @@ export async function POST(req: NextRequest): Promise<NextResponse<ChatApiRespon
       learnerData.strongTopics,
     );
 
-    const conversationMessages = messages.slice(-12).map((m) => ({
-      role:    m.role as "user" | "assistant",
-      content: m.content,
-    }));
-
     const completion = await openai.chat.completions.create({
       model:       MODEL,
-      temperature: 0.6,   // slightly lower = more reliable JSON structure
+      temperature: 0.6,
       messages: [
         { role: "system", content: systemPrompt },
-        ...conversationMessages,
+        ...messages.slice(-12).map((m) => ({
+          role:    m.role as "user" | "assistant",
+          content: m.content,
+        })),
       ],
     });
 
     const raw    = completion.choices[0]?.message?.content ?? "{}";
-    const parsed = parseChat(raw);
+    const parsed = safeParse(raw);
 
-    // Build Pollinations illustration URL if requested
-    const illustration = parsed.illustration?.prompt
+    const illustration = parsed.illustrationPrompt
       ? {
-          url:    `https://image.pollinations.ai/prompt/${encodeURIComponent(parsed.illustration.prompt)}?width=800&height=500&nologo=true`,
-          prompt: parsed.illustration.prompt,
-          alt:    parsed.illustration.alt ?? parsed.illustration.prompt,
+          url:    `https://image.pollinations.ai/prompt/${encodeURIComponent(parsed.illustrationPrompt)}?width=800&height=500&nologo=true`,
+          prompt: parsed.illustrationPrompt,
+          alt:    parsed.illustrationAlt ?? parsed.illustrationPrompt,
         }
       : undefined;
 
     const response: ChatApiResponse = {
-      content:       parsed.content       ?? "I'm not sure how to respond to that.",
-      topic:         parsed.topic         ?? "Science",
+      content:       parsed.content       || "I'm not sure how to respond. Please try again.",
+      topic:         parsed.topic         || "Science",
       comprehension: parsed.comprehension ?? 50,
       triggerQuiz:   parsed.triggerQuiz   ?? false,
       quizTopic:     parsed.quizTopic     ?? undefined,
-      diagram:       parsed.diagram       ?? undefined,
+      diagramTopic:  parsed.wantsDiagram ? (parsed.topic || undefined) : undefined,
+      diagramTitle:  parsed.diagramTitle  ?? undefined,
       illustration,
     };
 
