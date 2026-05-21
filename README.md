@@ -2,7 +2,7 @@
 
 > A conversational AI tutor that adapts to your level, visualises concepts, and tracks your progress over time — built on a fully free AI stack.
 
-**[Live Demo](https://your-demo-link.vercel.app)** · **[Screenshots](#screenshots)**
+**[Live Demo](https://ai-science-learning-assistant.vercel.app)** · **[Screenshots](#screenshots)**
 
 ---
 
